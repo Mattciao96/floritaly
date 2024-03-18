@@ -68,12 +68,23 @@
 #' @examples my_names <- c("Crocus etruscus Parl.","Santolina pinnata Viv.")
 #' s <- nameStand(my_names)
 nameStand <- function(nvec) {
-  s <- floritaly::superparse(nvec) %>%
-    dplyr::filter(quality > 0, quality < 5, cardinality > 1, cardinality < 4)
+
+  s <- floritaly::superparse(nvec)
+  # MC
+  # add original row order to reconstruct the original order at the end
+  # separate parsed of good quality from parsed of bad quality
+  s <- s %>%
+    dplyr::mutate(original_order = dplyr::row_number())
+  s_bad_parsing <- s %>%
+    dplyr::filter(quality == 0 | cardinality <= 1)
+  s <- s %>%
+  dplyr::filter(quality > 0, quality < 5, cardinality > 1, cardinality < 4)
+
+
   s_row <- nrow(s)
   m_exact <- data.frame(jcol = c("verbatim","canonicalfull","canonicalsimple","canonicalstem"),
                         mtyp = c("perfect","full","simple","stem"))
-  e_match <- ijoin(ds = s,jcol = m_exact$jcol[1],mtyp = m_exact$mtyp[1])
+  e_match <- ijoin(ds = s,jcol = m_exact$jcol[1],mtyp = m_exact$mtyp[1]) # non ha più original_row
 
   for(i in 2:nrow(m_exact)) {
     if(nrow(e_match) == s_row) break
@@ -96,6 +107,7 @@ nameStand <- function(nvec) {
                                                  "i_epithet" = "s_epithet"),
                      maxdist = 1, mtyp = "sub2sp", ckl_df = ckl_parsed2)
     e_match <- dplyr::union(e_match,f_match)
+
     unmatched_v <- setdiff(nosub_match3$verbatim,f_match$myname)
     if(nrow(e_match) == s_row) break
 
@@ -111,10 +123,10 @@ nameStand <- function(nvec) {
 
   if(exists("unmatched_v")) {
     unmatched <- dplyr::filter(s,verbatim %in% unmatched_v) %>%
-      dplyr::select(verbatim) %>% dplyr::rename(myname = verbatim) %>%
+      dplyr::select(original_order,verbatim) %>% dplyr::rename(myname = verbatim) %>%
       dplyr::mutate(closest_match = '', distance = 99, match_type = "unmatched")
     closest_match <- dplyr::union(e_match,unmatched)
-    cat(nrow(unmatched),"names remain unmatched\n")
+    cat(nrow(unmatched) + nrow(s_bad_parsing),"names remain unmatched\n")
   } else {
     closest_match <- e_match
     cat("all",nrow(closest_match), "supplied names have been matched\n")
@@ -123,9 +135,24 @@ nameStand <- function(nvec) {
   cat("retrieving accepted names...\n")
   accepted_match <- dplyr::left_join(closest_match,ckl_names,
                                       by=c("closest_match" = "sinonimo"),
-                                     keep = FALSE)
+                                      keep = FALSE)
+  # MC return even unmatched
+  unmatched <- df_for_bad_parse(s_bad_parsing)
+  accepted_match <- rbind(accepted_match, unmatched)
 
 
+  # MC dirty solution to deal with taraxacum assigned to unmatched
+  accepted_match <-  accepted_match %>%
+    dplyr::mutate(codice_unico = dplyr::if_else(match_type == "unmatched", NA, codice_unico),
+           entita = dplyr::if_else(match_type == "unmatched", NA, entita))
+
+  # MC remove duplicate match
+  accepted_match <- remove_multiple_matches(accepted_match)
+
+  # MC reorder and remove original_order column
+  accepted_match <-  accepted_match %>%
+    dplyr::arrange(original_order) #%>%
+    dplyr::select(-original_order)
   return(accepted_match)
 }
 
@@ -142,9 +169,10 @@ fjoin <- function(ds,jcol,maxdist,mtyp,ckl_df) {
   fj <- fuzzyjoin::stringdist_inner_join(ds,ckl_df,by = jcol,
                                          max_dist = maxdist, method = "lv",
                                          distance_col ="fuzzydist") %>%
-    squeeze_df(mt = mtyp) %>% pick_mindist() ### originally squeeze_df(.,mt=mtyp)
+    squeeze_df(mt = mtyp)
+  fj2 <- fj %>% pick_mindist() ### originally squeeze_df(.,mt=mtyp)
   cat("found ", nrow(fj), "\n")
-  return(fj)
+  return(fj2)
 }
 
 squeeze_df <- function(df,mt) {
@@ -152,7 +180,8 @@ squeeze_df <- function(df,mt) {
   ### and as many rows as dictated by filtering expression in the calling code.
   ### This function selects the original and matched name columns, renames them, and
   ### adds the levenshtein distance between them and the match type passed as mt (a character string)
-  dd <- dplyr::select(df, verbatim.x,verbatim.y) %>%
+  actual_df <- df
+  dd <- dplyr::select(df, original_order,verbatim.x,verbatim.y) %>% # MC keep original order
     dplyr::rename(myname = verbatim.x, closest_match = verbatim.y) %>%
     dplyr::mutate(distance = stringdist::stringdist(myname,closest_match,method = "lv"),
                   match_type = mt)
@@ -165,7 +194,7 @@ pick_mindist <- function(df) {
   ### (in column "myname") and the set of closest_matches fuzzy-joined to it, then picks
   ### only the first row of that set and returns a dataframe with as many rows as the original
   ### names in df
-  dd <- dplyr::group_by(df, myname) %>%
+  dd <- dplyr::group_by(df, original_order, myname) %>%
     dplyr::slice_min(distance) %>%
     dplyr::slice_head()
   return(dd)
@@ -178,3 +207,43 @@ xstrain <- function(dfs,dfm) {
   return(dplyr::filter(dfs,verbatim %in% d))
 }
 
+
+df_for_bad_parse <- function(df) {
+### df is a dataframe resulted from superparse() with only low quality names:
+### quality == 0 or cardinality <= 1
+### returns a dataframe with the same structure of the one resulting from nameStand
+### the distance is 99 and match_type unmatched
+  result_df <- data.frame(
+    original_order = NA,
+    myname = NA,
+    closest_match = NA,
+    distance = 99,
+    match_type = "unmatched",
+    codice_unico = NA,
+    entita = NA,
+    stringsAsFactors = FALSE
+  )
+  result_df <- result_df[rep(1, nrow(df)), ]
+  result_df$myname <-  df$verbatim
+  result_df$original_order <- df$original_order
+  return(result_df)
+}
+
+remove_multiple_matches <- function(df) {
+  ### keeps only one match for rare cases where 2 are returned like:
+  ### Cyrtomium falcatum
+  ### returns Cyrtomium falcatum (L.f.) C.Presl 2 full
+  ### Cyrtomium falcatum auct. Fl. Ital. p.p., non… 28 full
+  ### in this case i simply keep the one with the best score
+  ### but we could think of something more elaborate
+  ### the second part removes rare exceptions like:
+  ### Campsis radicans (L.) Seem. ex Bureau
+  df <- df %>%
+    dplyr::group_by(original_order) %>%
+    dplyr::filter(distance == min(distance)) %>%
+    dplyr::ungroup() %>%
+    #dplyr::distinct() %>%
+    dplyr::arrange(distance) %>% # important to remove rare exceprions
+    dplyr::filter(!duplicated(original_order))
+  return(df)
+}
