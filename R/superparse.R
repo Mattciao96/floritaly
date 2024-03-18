@@ -43,21 +43,42 @@ superparse <- function(namevek) {
   myparsed$i_epithet <- emptychar
   myparsed$i_author <- emptychar
 
-  myparsed_c2 <- dplyr::filter(myparsed, cardinality == 2)
-  myparsed_c3 <- dplyr::filter(myparsed, cardinality == 3)
-
-  myparsed_c2$s_author <- detect_lastauthor(myparsed_c2)
-
-  if(nrow(myparsed_c3) > 0) {
-    myparsed_c3$s_author <- detect_interauthor(myparsed_c3)
-    myparsed_c3$i_qualif <- detect_iqualif(myparsed_c3)
-    myparsed_c3$i_epithet <- detect_iepithet(myparsed_c3)
-    myparsed_c3$i_author <- detect_lastauthor(myparsed_c3)
+  # mc cardinality 0 dovrebbe tornare tutto na
+  # devoi capire situazione genus e cardinality 1
+  # cardinality 1 è genus + autore
+  # per non perdere specie per strada forse è meglio provare con un for
+  for(i in nrow(myparsed)){
+    if (myparsed[i, 'cardinality'] == 2) {
+      myparsed[i,'s_author'] = detect_lastauthor(myparsed[i,])
+    } else if (myparsed[i, 'cardinality'] == 3) {
+      myparsed[i,] = detect_for_c3(myparsed[i,])
+    }
   }
-
-  myparsed <- dplyr::bind_rows(myparsed_c2,myparsed_c3)
+  ### codice originale
+  # myparsed_c2 <- dplyr::filter(myparsed, cardinality == 2)
+  # myparsed_c3 <- dplyr::filter(myparsed, cardinality == 3)
+  #
+  # myparsed_c2$s_author <- detect_lastauthor(myparsed_c2)
+  #
+  # if(nrow(myparsed_c3) > 0) {
+  #   myparsed_c3$s_author <- detect_interauthor(myparsed_c3)
+  #   myparsed_c3$i_qualif <- detect_iqualif(myparsed_c3)
+  #   myparsed_c3$i_epithet <- detect_iepithet(myparsed_c3)
+  #   myparsed_c3$i_author <- detect_lastauthor(myparsed_c3)
+  # }
+  # myparsed <- dplyr::bind_rows(myparsed_c2,myparsed_c3)
   cat("job ended, returning control to main function.")
   return(myparsed)
+}
+
+
+detect_for_c3 <- function(myparsed_c3) {
+  ### combine detect_interauthor, detect_iqualif, detect_iepithet, detect_lastauthor
+  myparsed_c3$s_author <- detect_interauthor(myparsed_c3)
+  myparsed_c3$i_qualif <- detect_iqualif(myparsed_c3)
+  myparsed_c3$i_epithet <- detect_iepithet(myparsed_c3)
+  myparsed_c3$i_author <- detect_lastauthor(myparsed_c3)
+  return(myparsed_c3)
 }
 
 detect_lastauthor <- function(pnames) {
