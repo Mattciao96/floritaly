@@ -19,7 +19,7 @@ ckl_datalink <- function(n=c("Crocus etruscus Parl.")) {
                    "ckl_id",
                    "accepted_name")
   if(is.vector(n) & typeof(n) == "character") {
-    sn <- floritaly::nameStand(n)
+    sn <- test::nameStand(n)
   } else {
     if(is.data.frame(n) & all(names(n)) == my_colnames) {
       sn <- n
@@ -32,6 +32,6 @@ ckl_datalink <- function(n=c("Crocus etruscus Parl.")) {
     }
   }
 
-  return(dplyr::left_join(sn,floritaly::ckl_data,by="codice_unico"))
+  return(dplyr::left_join(sn,floritalytest::ckl_data,by="codice_unico"))
 
 }

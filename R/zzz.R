@@ -38,7 +38,7 @@ get_remote_version <- function() {
 get_local_version <- function() {
 
   # load ckl_version dataframe
-  utils::data("ckl_version",package = "floritaly", envir = environment())
+  utils::data("ckl_version",package = "floritalytest", envir = environment())
   v <- paste(ckl_version$major,ckl_version$minor,ckl_version$patch,sep = ".")
 
   return(v)

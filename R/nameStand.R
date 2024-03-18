@@ -69,7 +69,7 @@
 #' s <- nameStand(my_names)
 nameStand <- function(nvec) {
 
-  s <- floritaly::superparse(nvec)
+  s <- floritalytest::superparse(nvec)
   # MC
   # add original row order to reconstruct the original order at the end
   # separate parsed of good quality from parsed of bad quality
@@ -151,7 +151,7 @@ nameStand <- function(nvec) {
 
   # MC reorder and remove original_order column
   accepted_match <-  accepted_match %>%
-    dplyr::arrange(original_order) #%>%
+    dplyr::arrange(original_order) %>%
     dplyr::select(-original_order)
   return(accepted_match)
 }
